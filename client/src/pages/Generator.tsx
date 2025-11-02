@@ -1,18 +1,44 @@
 import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { Loader2, Copy, CheckCircle2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 import type { ManualTestCase, GenerateTestResponse } from "@shared/schema";
 
 export default function Generator() {
   const [requirement, setRequirement] = useState("");
-  const [isGenerating, setIsGenerating] = useState(false);
   const [result, setResult] = useState<GenerateTestResponse | null>(null);
   const [copiedTestCases, setCopiedTestCases] = useState(false);
   const [copiedScript, setCopiedScript] = useState(false);
   const { toast } = useToast();
+
+  const generateMutation = useMutation({
+    mutationFn: async (requirement: string) => {
+      const data = await apiRequest<GenerateTestResponse>(
+        "POST",
+        "/api/generate",
+        { requirement }
+      );
+      return data;
+    },
+    onSuccess: (data) => {
+      setResult(data);
+      toast({
+        title: "Success!",
+        description: "Test cases generated successfully.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Generation Failed",
+        description: error.message || "Failed to generate test cases. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
 
   const handleGenerate = async () => {
     if (requirement.trim().length < 10) {
@@ -24,28 +50,8 @@ export default function Generator() {
       return;
     }
 
-    setIsGenerating(true);
     setResult(null);
-
-    try {
-      // This will be connected to the backend in Phase 3
-      const mockResult: GenerateTestResponse = {
-        id: "mock-id",
-        requirement,
-        manualTestCases: [],
-        cypressScript: "",
-        createdAt: new Date().toISOString(),
-      };
-      setResult(mockResult);
-    } catch (error) {
-      toast({
-        title: "Generation Failed",
-        description: "Failed to generate test cases. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsGenerating(false);
-    }
+    generateMutation.mutate(requirement);
   };
 
   const copyToClipboard = async (text: string, type: "testcases" | "script") => {
@@ -71,7 +77,8 @@ export default function Generator() {
     }
   };
 
-  const formatTestCasesAsText = (testCases: ManualTestCase[]): string => {
+  const formatTestCasesAsText = (testCases: ManualTestCase[] = []): string => {
+    if (!testCases || testCases.length === 0) return "";
     return testCases
       .map(
         (tc) =>
@@ -123,12 +130,12 @@ export default function Generator() {
 
             <Button
               onClick={handleGenerate}
-              disabled={!isValidLength || isGenerating}
+              disabled={!isValidLength || generateMutation.isPending}
               size="lg"
               className="w-full md:w-auto gap-2"
               data-testid="button-generate"
             >
-              {isGenerating ? (
+              {generateMutation.isPending ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" />
                   Generating...
@@ -142,7 +149,7 @@ export default function Generator() {
             </Button>
           </div>
 
-          {isGenerating && (
+          {generateMutation.isPending && (
             <Card className="border-2 border-primary/20">
               <CardContent className="py-12">
                 <div className="flex flex-col items-center justify-center gap-4 text-center">
@@ -158,7 +165,7 @@ export default function Generator() {
             </Card>
           )}
 
-          {result && !isGenerating && (
+          {result && !generateMutation.isPending && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-4">
@@ -167,7 +174,7 @@ export default function Generator() {
                     variant="ghost"
                     size="sm"
                     onClick={() =>
-                      copyToClipboard(formatTestCasesAsText(result.manualTestCases), "testcases")
+                      copyToClipboard(formatTestCasesAsText(result.manualTestCases || []), "testcases")
                     }
                     className="gap-2"
                     data-testid="button-copy-testcases"
@@ -186,7 +193,7 @@ export default function Generator() {
                   </Button>
                 </CardHeader>
                 <CardContent>
-                  {result.manualTestCases.length > 0 ? (
+                  {result.manualTestCases && result.manualTestCases.length > 0 ? (
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>

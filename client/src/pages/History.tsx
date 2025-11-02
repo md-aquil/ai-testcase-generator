@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Trash2, Eye, FileText, Calendar, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -9,29 +10,40 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { GenerateTestResponse, ManualTestCase } from "@shared/schema";
 import { format } from "date-fns";
 
 export default function History() {
-  const [historyItems, setHistoryItems] = useState<GenerateTestResponse[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [selectedItem, setSelectedItem] = useState<GenerateTestResponse | null>(null);
   const { toast } = useToast();
 
-  const handleDelete = async (id: string) => {
-    try {
-      setHistoryItems(historyItems.filter((item) => item.id !== id));
+  const { data: historyItems = [], isLoading } = useQuery<GenerateTestResponse[]>({
+    queryKey: ["/api/history"],
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest<{ success: boolean }>("DELETE", `/api/history/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/history"] });
       toast({
         title: "Deleted",
         description: "History item deleted successfully.",
       });
-    } catch (error) {
+    },
+    onError: () => {
       toast({
         title: "Delete Failed",
         description: "Failed to delete history item.",
         variant: "destructive",
       });
-    }
+    },
+  });
+
+  const handleDelete = async (id: string) => {
+    deleteMutation.mutate(id);
   };
 
   const formatDate = (dateString: string) => {
@@ -104,8 +116,8 @@ export default function History() {
                   <CardContent>
                     <div className="space-y-4">
                       <div className="text-sm text-muted-foreground">
-                        {item.manualTestCases.length} test case
-                        {item.manualTestCases.length !== 1 ? "s" : ""} generated
+                        {item.manualTestCases?.length || 0} test case
+                        {item.manualTestCases?.length !== 1 ? "s" : ""} generated
                       </div>
                       <div className="flex gap-2">
                         <Button
